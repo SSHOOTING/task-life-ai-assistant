@@ -1,0 +1,154 @@
+name: Deploy to Blue PC
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: bluepc-production
+  cancel-in-progress: false
+
+jobs:
+  verify-ci:
+    name: Verify successful CI for this commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ci_run_id: ${{ steps.ci.outputs.ci_run_id }}
+
+    steps:
+      - name: Check deployment secrets are present
+        env:
+          BLUEPC_HOST: ${{ secrets.BLUEPC_HOST }}
+          BLUEPC_USER: ${{ secrets.BLUEPC_USER }}
+          BLUEPC_SSH_KEY: ${{ secrets.BLUEPC_SSH_KEY }}
+          BLUEPC_KNOWN_HOSTS: ${{ secrets.BLUEPC_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in BLUEPC_HOST BLUEPC_USER BLUEPC_SSH_KEY BLUEPC_KNOWN_HOSTS; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing GitHub secret: ${name}"
+              missing=1
+            fi
+          done
+          exit "${missing}"
+
+      - name: Find successful CI run and artifact
+        id: ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "::error::Blue PC deployment is allowed only from main."
+            exit 1
+          fi
+
+          runs_url="repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&per_page=100"
+          runs_json="$(gh api "${runs_url}")"
+          run_id="$(jq -r '
+            [.workflow_runs[] | select(.conclusion == "success")]
+            | sort_by(.created_at)
+            | last
+            | (.id // empty)
+          ' <<<"${runs_json}")"
+
+          if [ -z "${run_id}" ]; then
+            echo "::error::No successful CI run exists for commit ${GITHUB_SHA}."
+            exit 1
+          fi
+
+          artifacts_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts")"
+          artifact_count="$(jq -r '
+            [.artifacts[] | select(.name == "goal-of-ours-mvp" and .expired == false)]
+            | length
+          ' <<<"${artifacts_json}")"
+          if [ "${artifact_count}" -lt 1 ]; then
+            echo "::error::Successful CI run ${run_id} has no unexpired goal-of-ours-mvp artifact."
+            exit 1
+          fi
+
+          echo "ci_run_id=${run_id}" >> "${GITHUB_OUTPUT}"
+
+  deploy:
+    name: Upload and deploy release
+    needs: verify-ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out deployment interface
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Download CI release artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: goal-of-ours-mvp
+          path: release
+          run-id: ${{ needs.verify-ci.outputs.ci_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify release checksum
+        run: |
+          set -euo pipefail
+          cd release
+          test -f goal-of-ours-mvp.zip
+          test -f goal-of-ours-mvp.zip.sha256
+          sha256sum -c goal-of-ours-mvp.zip.sha256
+
+      - name: Upload release and invoke Blue PC deployment
+        env:
+          BLUEPC_HOST: ${{ secrets.BLUEPC_HOST }}
+          BLUEPC_USER: ${{ secrets.BLUEPC_USER }}
+          BLUEPC_SSH_KEY: ${{ secrets.BLUEPC_SSH_KEY }}
+          BLUEPC_KNOWN_HOSTS: ${{ secrets.BLUEPC_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          key_file="${RUNNER_TEMP}/bluepc_ssh_key"
+          known_hosts_file="${RUNNER_TEMP}/bluepc_known_hosts"
+          cleanup() {
+            rm -f "${key_file}" "${known_hosts_file}"
+          }
+          trap cleanup EXIT
+
+          printf '%s\n' "${BLUEPC_SSH_KEY}" > "${key_file}"
+          printf '%s\n' "${BLUEPC_KNOWN_HOSTS}" > "${known_hosts_file}"
+          chmod 600 "${key_file}" "${known_hosts_file}"
+          ssh-keygen -y -f "${key_file}" </dev/null >/dev/null
+
+          remote="${BLUEPC_USER}@${BLUEPC_HOST}"
+          ssh_opts=(
+            -i "${key_file}"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="${known_hosts_file}"
+          )
+
+          ssh "${ssh_opts[@]}" "${remote}" \
+            "powershell.exe -NoProfile -Command \"New-Item -ItemType Directory -Force -Path 'C:/GoalOfOurs/incoming','C:/GoalOfOurs/ops' | Out-Null\""
+
+          scp "${ssh_opts[@]}" \
+            deploy/bluepc/remote/deploy-release.ps1 \
+            deploy/bluepc/remote/rollback.ps1 \
+            deploy/bluepc/remote/healthcheck.ps1 \
+            deploy/bluepc/remote/run-mvp.ps1 \
+            deploy/bluepc/config/mvp.env.example \
+            "${remote}:C:/GoalOfOurs/ops/"
+
+          scp "${ssh_opts[@]}" \
+            release/goal-of-ours-mvp.zip \
+            release/goal-of-ours-mvp.zip.sha256 \
+            "${remote}:C:/GoalOfOurs/incoming/"
+
+          ssh "${ssh_opts[@]}" "${remote}" \
+            "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:/GoalOfOurs/ops/deploy-release.ps1\" -PackageZip \"C:/GoalOfOurs/incoming/goal-of-ours-mvp.zip\" -ReleaseId \"${GITHUB_SHA}\" -Port 18765 -TaskName \"GoalOfOurs-MVP\" -LlmMode mock -TailscalePort 18766"
+

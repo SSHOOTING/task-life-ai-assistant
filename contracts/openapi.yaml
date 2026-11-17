@@ -1,0 +1,207 @@
+openapi: 3.1.0
+info:
+  title: Goal of Ours MVP Contracts
+  version: 1.0.0
+  description: >
+    Target contracts for the A/B/C MVP. The current local implementation runs
+    the responsibilities in one process and exposes the external H5 adapter.
+servers:
+  - url: http://127.0.0.1:18765
+    description: Current local MVP
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, status]
+                properties:
+                  ok:
+                    type: boolean
+                  status:
+                    type: string
+  /api/v1/turns:
+    post:
+      summary: Submit one natural-language turn
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TurnRequest"
+      responses:
+        "200":
+          description: Turn result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TurnResponse"
+        "400":
+          description: Invalid request
+  /api/v1/tasks:
+    get:
+      summary: Read tasks for one user and optional date
+      parameters:
+        - name: user_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Task list
+  /api/v1/corrections:
+    post:
+      summary: Correct or revoke one task
+      responses:
+        "200":
+          description: Correction result
+  /api/v1/events/{event_id}:
+    get:
+      summary: Read one source event and its derived records
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Source event
+        "404":
+          description: Event not found or not owned by the user
+  /wechat/callback:
+    get:
+      summary: Verify a WeChat callback URL
+      responses:
+        "200":
+          description: echostr
+        "403":
+          description: Invalid signature
+    post:
+      summary: Receive a mock or real WeChat XML callback
+      responses:
+        "200":
+          description: Passive XML reply
+  /internal/v1/turns:
+    post:
+      summary: Target A to B turn contract
+      responses:
+        "200":
+          description: TurnResponse
+  /internal/v1/ingest:
+    post:
+      summary: Target B to C ingest contract
+      responses:
+        "200":
+          description: IngestResult
+components:
+  schemas:
+    TurnRequest:
+      type: object
+      required: [request_id, user_id, source, source_message_id, content]
+      properties:
+        request_id:
+          type: string
+        user_id:
+          type: string
+        source:
+          type: string
+          enum: [h5, wechat]
+        source_message_id:
+          type: string
+        content:
+          type: string
+        received_at:
+          type: string
+          format: date-time
+        channel_metadata:
+          type: object
+    TurnResponse:
+      type: object
+      required: [code, request_id, data]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        request_id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        data:
+          type: object
+          required: [status, event_id]
+          properties:
+            status:
+              type: string
+              enum: [recorded, duplicate, clarification_required, corrected]
+            event_id:
+              type: string
+            reply_text:
+              type: string
+            tasks:
+              type: array
+              items:
+                type: object
+            clarification:
+              type: [string, "null"]
+            coach_text:
+              type: [string, "null"]
+    IngestRequest:
+      type: object
+      required: [request_id, user_id, source, source_message_id, content]
+      properties:
+        request_id:
+          type: string
+        user_id:
+          type: string
+        source:
+          type: string
+          enum: [h5, wechat]
+        source_message_id:
+          type: string
+        content:
+          type: string
+    ParserResult:
+      type: object
+      required: [records, clarification]
+      properties:
+        records:
+          type: array
+          items:
+            type: object
+            required: [kind, content, status, confidence, evidence]
+            properties:
+              kind:
+                type: string
+                enum: [task, task_progress, daily_task]
+              title:
+                type: [string, "null"]
+              content:
+                type: string
+              status:
+                type: string
+              confidence:
+                type: number
+                minimum: 0
+                maximum: 1
+              evidence:
+                type: string
+              payload:
+                type: object
+        clarification:
+          type: [string, "null"]
+

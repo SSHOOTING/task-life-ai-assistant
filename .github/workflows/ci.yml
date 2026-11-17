@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  test-and-package:
+    name: Test and package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Compile Python sources
+        run: python -m compileall -q mvp ci
+
+      - name: Run unit tests
+        env:
+          LLM_MODE: mock
+        run: |
+          python -m unittest discover -s mvp/tests -v
+          python -m unittest discover -s tests/acceptance -v
+
+      - name: Build release archive
+        run: >-
+          python ci/build_release.py
+          --output dist/goal-of-ours-mvp.zip
+          --metadata dist/release-metadata.json
+          --release-id "${GITHUB_SHA}"
+
+      - name: Verify deterministic archive
+        run: |
+          set -euo pipefail
+          python ci/build_release.py \
+            --output "${RUNNER_TEMP}/goal-of-ours-mvp-repeat.zip" \
+            --metadata "${RUNNER_TEMP}/release-metadata-repeat.json" \
+            --release-id "${GITHUB_SHA}"
+          cmp dist/goal-of-ours-mvp.zip "${RUNNER_TEMP}/goal-of-ours-mvp-repeat.zip"
+
+      - name: Show release checksum
+        run: cat dist/goal-of-ours-mvp.zip.sha256
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: goal-of-ours-mvp
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14

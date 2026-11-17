@@ -1,0 +1,105 @@
+# Secrets and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+.npmrc
+.pypirc
+credentials.json
+secrets.json
+cookies.txt
+cookie*.json
+token*.json
+appsecret.*
+
+# Local databases and SQLite sidecars
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+data/*.db
+mvp/data/*.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+pip-wheel-metadata/
+
+# Logs, temporary files, and process state
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+logs/
+tmp/
+temp/
+*.pid
+
+# IDE and OS metadata
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+Thumbs.db
+desktop.ini
+*.suo
+*.user
+
+# Local runtime data and downloads
+.local/
+.local-runtime/
+blue-pc-data/
+runtime-data/
+downloads/
+
+# Office lock files
+~$*.docx
+~$*.xlsx
+~$*.pptx
+
+# Local WeChat login/QR and diagnostic screenshots
+# Keep only reviewed evidence screenshots that contain no login state or QR code.
+bg-check.png
+mp-check.png
+mp-dev-platform.png
+mp-login-page.png
+mp-login-ok.png
+mp-login-qr.png
+
+# Machine-specific diagnostic helpers (hard-coded PIDs and local paths)
+capture-bg.ps1
+ocr-winrt.ps1
+
+# Personal notes, local-only analysis, and unrelated experiments
+*.local.*
+*.private.*
+local-notes/
+work-notes/
+screenshots/
+publication-test-*/
+
+# Screen-capture helpers and login-state evidence must stay local
+capture-*.ps1
+ocr-*.ps1
+*login*.png
+*qr*.png
