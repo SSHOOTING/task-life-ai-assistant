@@ -47,8 +47,8 @@ Expected result: one raw event and two task records. The life reflection remains
 3. [MVP technical specification](docs/MVP_SPEC_v1.0.docx)
 4. [SPEC reading guide](docs/spec-reading-guide.md)
 5. [WeChat integration notes](docs/wechat-integration.md)
-6. [Acceptance case matrix](docs/acceptance-cases.md)
-7. [Open product questions](docs/open-questions.md)
+6. [Acceptance cases and data-state baseline](docs/acceptance-cases.md)
+7. [Lead confirmation checklist](docs/open-questions.md)
 8. [CI/CD guide](docs/ci-cd.md)
 
 ## Repository map
